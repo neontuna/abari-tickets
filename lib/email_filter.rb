@@ -12,6 +12,14 @@ module EmailFilter
     auto = mail.header["Auto-Submitted"]&.to_s
     return [:skip, "auto-submitted: #{auto}"] if auto && auto != "no"
 
+    # Feedback-ID is the industry-standard header for transactional /
+    # notification mail (Google, GitHub, Stripe, etc.). Real customers
+    # writing from a personal mailbox will never have it.
+    return [:skip, "transactional (Feedback-ID present)"] if mail.header["Feedback-ID"]
+
+    from = Array(mail.from).first.to_s
+    return [:skip, "no-reply sender: #{from}"] if from.match?(/\A(?:no-?reply|do-?not-?reply)@/i)
+
     body = plain_body(mail)
     return [:skip, "html-only / no plain body"] if body.nil? || body.empty?
 
