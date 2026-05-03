@@ -18,6 +18,10 @@
     th { background: #fafafa; font-weight: 600; }
     .reason { color: #b22; }
     .body { color: #555; font-style: italic; }
+    .deferred-row td { background: #fff8e1; }
+    .action-printed  { color: #2a7a2a; font-weight: 600; }
+    .action-skipped  { color: #b22; font-weight: 600; }
+    .action-deferred { color: #a06400; font-weight: 600; }
     code { background: #f3f3f3; padding: 0.1em 0.3em; border-radius: 3px; }
   </style>
 </head>
@@ -32,10 +36,14 @@
     </div>
     <div class="card">
       <h2>Printer</h2>
-      <div class="big <%= @printer_ok ? "ok" : "bad" %>">
-        <%= @printer_ok ? "ready" : "unavailable" %>
+      <div class="big <%= @printer_status.ok? ? "ok" : "bad" %>">
+        <%= @printer_status.summary %>
       </div>
-      <div><code><%= @printer_device %></code></div>
+      <div class="sub">
+        paper: <%= @printer_status.paper %>
+        &middot; cover: <%= @printer_status.cover_open ? "open" : "closed" %>
+        &middot; <%= @printer_status.online ? "online" : "offline" %>
+      </div>
     </div>
   </div>
 
@@ -76,16 +84,16 @@
       </thead>
       <tbody>
         <% @recent.each do |row| %>
-          <tr>
+          <tr class="<%= row["action"] == "deferred" ? "deferred-row" : "" %>">
             <td><%= row["occurred_at"] %></td>
-            <td><%= row["action"] %></td>
+            <td><span class="action-<%= row["action"] %>"><%= row["action"] %></span></td>
             <td><%= row["sender"] %></td>
             <td><%= row["subject"] %></td>
             <td>
-              <% if row["action"] == "skipped" %>
-                <span class="reason"><%= row["reason"] %></span>
-              <% else %>
+              <% if row["action"] == "printed" %>
                 <span class="body"><%= row["body_excerpt"] %></span>
+              <% else %>
+                <span class="reason"><%= row["reason"] %></span>
               <% end %>
             </td>
           </tr>
