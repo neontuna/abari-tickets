@@ -1,22 +1,30 @@
 # abari-tickets
 
-A small Ruby starter project. The first feature is a minimal inbox-reader script
-that connects to a generic IMAP server and prints the most recent messages
-(date, sender, subject). It uses `[net-imap](https://github.com/ruby/net-imap)`
-for the protocol and the `[mail](https://github.com/mikel/mail)` gem to parse
-each message.
+A small Ruby app that watches a "repairs" IMAP mailbox, prints qualifying
+customer emails to a USB ESC/POS receipt printer, and exposes a small status
+dashboard on `:4567`. Runs as one Sinatra/Puma process inside Docker on a
+Raspberry Pi.
+
+Built on [`net-imap`](https://github.com/ruby/net-imap) +
+[`mail`](https://github.com/mikel/mail) for IMAP, `sinatra` + `puma` for the
+dashboard, `rufus-scheduler` for in-process polling, and `sqlite3` for the
+print-event log.
 
 ## Requirements
 
-- Ruby 3.4.7 (see `.ruby-version`)
-- Bundler 2.x
+- Docker + Docker Compose (the canonical run target is on a Raspberry Pi
+  with a USB receipt printer attached; the host kernel's `usblp` driver
+  exposes it at `/dev/usb/lp0`).
+- Ruby 3.4.7 (see `.ruby-version`) is only needed if you want to run things
+  outside of Docker for editor tooling; the production stack runs entirely
+  in the container.
 
 ## Setup
 
 ```bash
-bundle install
 cp .env.example .env
-# edit .env with your IMAP host + credentials
+# edit .env with your IMAP host + credentials, plus the new pipeline vars
+docker compose build
 ```
 
 ### Required env vars
@@ -54,26 +62,13 @@ Gmail no longer accepts your account password over IMAP. You must:
   it as `IMAP_PASSWORD`.
 3. Set `IMAP_HOST=imap.gmail.com`.
 
-OAuth2 / `XOAUTH2` is a future enhancement; for now this script uses plain
+OAuth2 / `XOAUTH2` is a future enhancement; for now the app uses plain
 `LOGIN` over TLS.
 
 ## Run
 
-```bash
-bundle exec bin/check_inbox
-```
-
-Example output:
-
-```
-Last 3 message(s) in INBOX on imap.gmail.com:
-2026-04-30T09:14:22-04:00  alerts@example.com  [Alert] Build #1234 passed
-2026-04-30T11:02:18-04:00  no-reply@github.com  [PR opened] Add inbox reader
-2026-05-01T08:47:01-04:00  friend@example.com   lunch?
-```
-
-The script uses IMAP `EXAMINE` (read-only), so messages are **not** flagged as
-Seen.
+See [Production run](#production-run) below for the normal `docker compose up`
+flow. There's no separate non-Docker run mode anymore.
 
 ## Docker (Raspberry Pi)
 
@@ -82,11 +77,10 @@ on the Pi that the USB printer is connected to. The compose service mounts the
 host's USB bus (`/dev/bus/usb`) and adds a USB cgroup rule so hot-plugged
 devices (like the receipt printer) are usable inside the container.
 
-Make sure `.env` exists (`cp .env.example .env`), then:
+Make sure `.env` exists (`cp .env.example .env`), then build the image:
 
 ```bash
 docker compose build
-docker compose run --rm app bundle exec bin/check_inbox
 ```
 
 Open a dev shell in the container (source is bind-mounted, so edits on the Pi
