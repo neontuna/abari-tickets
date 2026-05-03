@@ -26,59 +26,126 @@ building it.
 
 ## What this repo is
 
-A Ruby starter project running on a Raspberry Pi. Current scope:
+A small Ruby app running on a Raspberry Pi that watches a "repairs" IMAP
+mailbox and prints qualifying customer emails to a USB ESC/POS receipt
+printer. There's a tiny Sinatra dashboard at `:4567` for status.
 
-- `bin/check_inbox` — connects to an IMAP server (read-only `EXAMINE`) and
-  prints the most recent messages.
-- A `Dockerfile` + `docker-compose.yml` set up to develop on the Pi, with
-  `/dev/bus/usb` mounted so a USB receipt printer is reachable from inside the
-  container.
+The app is one process, in one container:
 
-Future-ish direction (don't pre-build any of this):
-- A small Sinatra/Rack web app on port `4567` (already mapped in compose).
-- Printing to the USB receipt printer.
-- Some kind of "tickets" workflow tying email -> printer.
+- **Sinatra** serves the dashboard.
+- **rufus-scheduler** runs in a thread inside the same Puma process and polls
+  IMAP every `POLL_INTERVAL_SECONDS`.
+- Each poll: fetch all messages in `INBOX`, run them through `EmailFilter`,
+  print the ones that pass via the `Printer` class (raw bytes to
+  `/dev/usb/lp0` via the kernel `usblp` driver), record an event row in
+  SQLite, then `IMAP MOVE` the message into `Repairs/Printed` or
+  `Repairs/Skipped`. Inbox stays empty between polls.
+
+Architecture (don't add pieces not on this picture without asking):
+
+```
+rufus  ->  InboxProcessor  ->  IMAP (fetch/move)
+                            ->  EmailFilter (decide)
+                            ->  Printer (/dev/usb/lp0)
+                            ->  DB (SQLite print_events)
+Sinatra (:4567)             ->  DB
+```
+
+There is **no Rails, no Sidekiq, no Redis, no cron, no host-side daemon**.
+That has been deliberately considered and rejected as overkill. If you find
+yourself reaching for any of them, stop and check with the user first.
 
 ## Stack
 
 - Ruby `3.4.7` (pinned via `.ruby-version` / `.tool-versions` / `Gemfile`).
 - Bundler 2.x.
-- Gems: `net-imap`, `mail`, `openssl >= 3.3.2` (works around a CRL regression
-  in the openssl 3.3.0 that ships with Ruby 3.4.7), `dotenv` in development.
+- Web: `sinatra`, `rackup`, `puma`. Single Puma process, default thread pool.
+- Scheduler: `rufus-scheduler` (in-process, single thread).
+- Storage: `sqlite3`, file lives at `DB_PATH` on a named docker volume so it
+  survives rebuilds. No migration framework; schema is `CREATE TABLE IF NOT
+  EXISTS` applied on every boot from `lib/db.rb`.
+- Mail: `net-imap`, `mail`, `openssl >= 3.3.2` (works around a CRL regression
+  in the openssl 3.3.0 that ships with Ruby 3.4.7).
+- Dev only: `dotenv`.
 
 ## Layout
 
 ```
-bin/check_inbox        # main script (executable)
-Gemfile / Gemfile.lock # deps
-.env.example           # required env vars, copy to .env
-Dockerfile             # ruby:3.4.7-slim + libusb
-docker-compose.yml     # mounts /dev/bus/usb, exposes 4567
-README.md              # user-facing setup + troubleshooting
+app.rb                   # Sinatra app: routes + scheduler hook
+config.ru                # rackup entrypoint
+views/dashboard.erb      # plain HTML/ERB dashboard, no JS
+lib/printer.rb           # ESC/POS driver (write/feed/cut, block form auto-cuts)
+lib/email_filter.rb      # decide(mail) -> [:print] | [:skip, reason]
+lib/inbox_processor.rb   # one poll cycle: fetch -> filter -> print -> move
+lib/db.rb                # SQLite handle + DB.record helper, schema on boot
+bin/                     # reserved for future executable scripts (currently empty)
+Gemfile / Gemfile.lock   # deps
+.env / .env.example      # config
+Dockerfile               # ruby:3.4.7-slim + native build + libusb + libssl + libsqlite3
+docker-compose.yml       # default command runs puma; mounts /dev/usb/lp0
+README.md                # user-facing setup, env vars, troubleshooting
 ```
 
 ## Running
 
-```bash
-bundle install
-cp .env.example .env   # fill in IMAP_HOST / IMAP_USERNAME / IMAP_PASSWORD
-bundle exec bin/check_inbox
-```
-
-Or in Docker on the Pi:
+The default `docker compose up` brings up the production stack:
 
 ```bash
-docker compose build
-docker compose run --rm app bundle exec bin/check_inbox
+docker compose up -d
+docker compose logs -f app
+# dashboard at http://<pi-host>:4567
 ```
 
-See `README.md` for the full env var list and troubleshooting (Gmail App
-Passwords, OpenSSL CRL error, etc.).
+For a debug shell (Dockerfile `CMD` is still `bash`):
+
+```bash
+docker compose run --rm app                                 # interactive bash
+docker compose run --rm app bundle exec irb -Ilib -rprinter # poke the printer
+```
+
+The `Repairs/Printed` and `Repairs/Skipped` IMAP folders must exist on the
+server before the first poll fires. The processor will not auto-create them.
 
 ## Conventions
 
-- Scripts in `bin/` are executable, start with `#!/usr/bin/env ruby` and
-  `# frozen_string_literal: true`, and use `require "bundler/setup"`.
-- Config comes from env vars, loaded via `dotenv` in development. Required
-  vars are validated at the top of the script with a clear error.
-- Keep `README.md` accurate when you change behavior or add env vars.
+- **Ruby files** start with `# frozen_string_literal: true`. Any future
+  scripts added to `bin/` should also start with `#!/usr/bin/env ruby` and
+  `require "bundler/setup"`.
+- **Reusable code lives in `lib/`** as small modules or classes (one
+  responsibility each). Don't introduce a service layer or directory of
+  base classes; keep the tree shallow.
+- **Config comes from env vars**, loaded via `dotenv` in development and via
+  compose's `env_file: .env` in production. Add new vars to both `.env.example`
+  and the README env-var table.
+- **No schema migrations.** `lib/db.rb` uses `CREATE TABLE IF NOT EXISTS` and
+  is reapplied on every boot. If you need a column, add it to the schema and
+  to any code that selects/inserts; for an existing dev DB you can wipe the
+  `repairs_data` volume.
+- **Filter rules live in `lib/email_filter.rb`.** When tuning what gets
+  printed vs skipped, that's the single place. Each rule should produce a
+  human-readable skip reason — the dashboard surfaces them so the user can
+  tune thresholds without spelunking through code.
+- **Printer is one-way.** We talk to `/dev/usb/lp0` (kernel `usblp` driver).
+  We do not have status read-back. Don't claim otherwise in UI text.
+- **Errors in the poll loop must not kill the scheduler.** The `every` block
+  in `app.rb` catches `StandardError` and `warn`s. Errors inside
+  `process_one` (e.g. a single bad message) do propagate up and abort the
+  current poll — that's intentional; the message stays in INBOX and gets
+  retried on the next poll.
+- **Keep `README.md` accurate** when you change behavior, env vars, or
+  required IMAP folders.
+
+## Things that have been deliberately deferred
+
+These have come up and been ruled out for now. Don't add them without asking:
+
+- Tests / CI / linters.
+- Authentication on the dashboard (it's on a trusted LAN).
+- Photo / attachment printing (customers occasionally attach photos; ignored
+  for now, only the plaintext body is printed).
+- Bidirectional printer status (paper-out, online). Would require dropping
+  `usblp` for raw `libusb`. Not worth the complexity yet.
+- Retries, dead-lettering, deduplication, rate limiting.
+- Pretty receipt formatting (bold/centered/barcodes/QR). The receipt is
+  plain text and the printer hardware-wraps long lines. Add styling only
+  when there's a concrete UX reason.
