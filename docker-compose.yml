@@ -1,0 +1,24 @@
+services:
+  app:
+    build: .
+    env_file: .env
+    volumes:
+      - .:/app
+      - bundle_cache:/usr/local/bundle
+    ports:
+      # Reserved for the future Sinatra/Rack web app. Harmless until something
+      # is actually listening on 4567 inside the container.
+      - "4567:4567"
+    devices:
+      - "/dev/bus/usb:/dev/bus/usb"
+    device_cgroup_rules:
+      # USB device class (major 189). Required so hot-plugged USB devices
+      # (e.g. the receipt printer) are usable inside the container, not just
+      # devices that were present when the container started.
+      - "c 189:* rmw"
+    tty: true
+    stdin_open: true
+    restart: unless-stopped
+
+volumes:
+  bundle_cache:

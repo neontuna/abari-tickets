@@ -63,11 +63,46 @@ Last 3 message(s) in INBOX on imap.gmail.com:
 The script uses IMAP `EXAMINE` (read-only), so messages are **not** flagged as
 Seen.
 
+## Docker (Raspberry Pi)
+
+A minimal `Dockerfile` and `docker-compose.yml` are included so you can develop
+on the Pi that the USB printer is connected to. The compose service mounts the
+host's USB bus (`/dev/bus/usb`) and adds a USB cgroup rule so hot-plugged
+devices (like the receipt printer) are usable inside the container.
+
+Make sure `.env` exists (`cp .env.example .env`), then:
+
+```bash
+docker compose build
+docker compose run --rm app bundle exec bin/check_inbox
+```
+
+Open a dev shell in the container (source is bind-mounted, so edits on the Pi
+are live):
+
+```bash
+docker compose run --rm app
+```
+
+Sanity-check that the printer is visible from inside the container:
+
+```bash
+docker compose run --rm app bash -lc "ls -l /dev/bus/usb"
+```
+
+Port `4567` is pre-mapped for a future Sinatra/Rack app — once a web server is
+running on `0.0.0.0:4567` inside the container, it's reachable at
+`http://<pi-host>:4567`.
+
+If `device_cgroup_rules` is rejected on your kernel/cgroup combo, replace the
+`devices:` and `device_cgroup_rules:` lines in `docker-compose.yml` with
+`privileged: true`.
+
 ## Troubleshooting
 
 - `**missing required env var(s): ...`** — copy `.env.example` to `.env` and
 fill in the missing values, or export them in your shell.
-- `**IMAP login failed ... AUTHENTICATIONFAILED**` — wrong username/password.
+- `**IMAP login failed ... AUTHENTICATIONFAILED`** — wrong username/password.
 For Gmail, make sure you're using an App Password and not your account
 password.
 - `**OpenSSL::SSL::SSLError: ... certificate verify failed (unable to get certificate CRL)**` — caused by a regression in `openssl` 3.3.0, which is the
@@ -78,3 +113,4 @@ version Ruby 3.4.7 ships with as a bundled gem. The `Gemfile` pins
 trusted by your system, or the host doesn't speak TLS on the port you set.
 Verify `IMAP_HOST`/`IMAP_PORT` and update your system CA bundle if needed.
 - **Connection hangs** — check that port 993 isn't blocked on your network.
+
