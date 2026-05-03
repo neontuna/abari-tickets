@@ -87,7 +87,15 @@ docker compose run --rm app
 Sanity-check that the printer is visible from inside the container:
 
 ```bash
-docker compose run --rm app bash -lc "ls -l /dev/bus/usb"
+docker compose run --rm app bash -lc "ls -l /dev/usb/lp0"
+```
+
+If the host kernel has the `usblp` driver bound to the printer (the default on
+Raspberry Pi OS), you can drive it by writing raw ESC/POS bytes to
+`/dev/usb/lp0`. From IRB inside the container:
+
+```ruby
+File.binwrite("/dev/usb/lp0", "\x1b@hello, printer!\n\n\n\x1dV\x00")
 ```
 
 Port `4567` is pre-mapped for a future Sinatra/Rack app — once a web server is

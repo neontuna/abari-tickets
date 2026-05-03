@@ -11,11 +11,16 @@ services:
       - "4567:4567"
     devices:
       - "/dev/bus/usb:/dev/bus/usb"
+      # The host's usblp kernel driver exposes the receipt printer here. Writing
+      # raw ESC/POS bytes to /dev/usb/lp0 is the simplest way to drive it.
+      - "/dev/usb/lp0:/dev/usb/lp0"
     device_cgroup_rules:
       # USB device class (major 189). Required so hot-plugged USB devices
       # (e.g. the receipt printer) are usable inside the container, not just
       # devices that were present when the container started.
       - "c 189:* rmw"
+      # usblp character devices (/dev/usb/lp*) are major 180.
+      - "c 180:* rmw"
     tty: true
     stdin_open: true
     restart: unless-stopped
