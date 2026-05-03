@@ -2,9 +2,11 @@ services:
   app:
     build: .
     env_file: .env
+    command: bundle exec puma -p 4567 config.ru
     volumes:
       - .:/app
       - bundle_cache:/usr/local/bundle
+      - repairs_data:/app/data
     ports:
       # Reserved for the future Sinatra/Rack web app. Harmless until something
       # is actually listening on 4567 inside the container.
@@ -27,3 +29,4 @@ services:
 
 volumes:
   bundle_cache:
+  repairs_data:

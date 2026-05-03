@@ -13,6 +13,13 @@ gem "openssl",  ">= 3.3.2"
 gem "net-imap", "~> 0.6"
 gem "mail",     "~> 2.8"
 
+# Web dashboard + in-process scheduler.
+gem "sinatra",         "~> 4.0"
+gem "rackup",          "~> 2.1"
+gem "puma",            "~> 6.4"
+gem "rufus-scheduler", "~> 3.9"
+gem "sqlite3",         "~> 2.0"
+
 group :development do
   gem "dotenv", "~> 3.1"
 end

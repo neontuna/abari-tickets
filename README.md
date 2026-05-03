@@ -32,6 +32,18 @@ cp .env.example .env
 | `IMAP_MAILBOX`  | Mailbox to read                             | `INBOX`    |
 | `INBOX_LIMIT`   | How many recent messages to print           | `10`       |
 
+The production pipeline (`docker compose up`) reads a few additional vars:
+
+| Variable                 | Description                                              | Default                     |
+| ------------------------ | -------------------------------------------------------- | --------------------------- |
+| `IMAP_PROCESSED_MAILBOX` | Folder to move printed emails into (must already exist)  | `Repairs/Printed`           |
+| `IMAP_SKIPPED_MAILBOX`   | Folder to move filtered-out emails into (must exist)     | `Repairs/Skipped`           |
+| `POLL_INTERVAL_SECONDS`  | How often the scheduler polls IMAP                       | `180`                       |
+| `PRINTER_DEVICE`         | usblp device node                                        | `/dev/usb/lp0`              |
+| `BODY_MIN_CHARS`         | Reject emails with plaintext body shorter than this      | `5`                         |
+| `BODY_MAX_CHARS`         | Reject emails with plaintext body longer than this       | `1500`                      |
+| `DB_PATH`                | SQLite database file path inside the container           | `/app/data/repairs.sqlite3` |
+
 
 ### Gmail note
 
@@ -98,13 +110,56 @@ Raspberry Pi OS), you can drive it by writing raw ESC/POS bytes to
 File.binwrite("/dev/usb/lp0", "\x1b@hello, printer!\n\n\n\x1dV\x00")
 ```
 
-Port `4567` is pre-mapped for a future Sinatra/Rack app — once a web server is
-running on `0.0.0.0:4567` inside the container, it's reachable at
-`http://<pi-host>:4567`.
-
 If `device_cgroup_rules` is rejected on your kernel/cgroup combo, replace the
 `devices:` and `device_cgroup_rules:` lines in `docker-compose.yml` with
 `privileged: true`.
+
+## Production run
+
+The default `docker compose up` brings up a single container running a Sinatra
+app on port `4567` plus an in-process scheduler that polls IMAP every
+`POLL_INTERVAL_SECONDS`, filters out non-customer mail, prints qualifying
+repair emails to the receipt printer, and moves each message into the
+configured `Repairs/Printed` or `Repairs/Skipped` IMAP folder.
+
+### One-time setup
+
+1. Copy `.env.example` to `.env` and fill in IMAP credentials.
+2. **Create the IMAP folders** the pipeline will move messages into. In Gmail,
+   create labels named `Repairs/Printed` and `Repairs/Skipped` (or whatever
+   you set `IMAP_PROCESSED_MAILBOX` / `IMAP_SKIPPED_MAILBOX` to). The pipeline
+   does not auto-create them.
+
+### Run
+
+```bash
+docker compose up -d
+docker compose logs -f app
+```
+
+Visit `http://<pi-host>:4567` for the dashboard: emails printed today,
+last printed / last skipped details, recent events, and printer status.
+`/healthz` returns `ok`. `/events.json` returns the last 100 events.
+
+### Filter
+
+A message is **printed** unless any of these match:
+
+- has a `List-Unsubscribe` header (bulk / list mail)
+- has an `Auto-Submitted` header other than `no`
+- has no `text/plain` part (HTML-only marketing)
+- plaintext body is shorter than `BODY_MIN_CHARS` or longer than `BODY_MAX_CHARS`
+
+Skip reasons are recorded so you can tune the thresholds in `.env`.
+
+### Debug shell
+
+The Dockerfile's default command is still `bash`, so the one-off form drops
+you into a shell with the source bind-mounted:
+
+```bash
+docker compose run --rm app
+```
 
 ## Troubleshooting
 

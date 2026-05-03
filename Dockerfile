@@ -11,6 +11,7 @@ RUN apt-get update \
         ca-certificates \
         tzdata \
         libssl-dev \
+        libsqlite3-dev \
         libusb-1.0-0 \
  && rm -rf /var/lib/apt/lists/*
 
