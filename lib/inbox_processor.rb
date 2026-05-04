@@ -61,7 +61,7 @@ module InboxProcessor
     decision, reason = EmailFilter.decide(mail)
     if decision == :print
       body = EmailFilter.plain_body(mail)
-      Printer.open(ENV.fetch("PRINTER_DEVICE", Printer::DEFAULT_DEVICE)) do |p|
+      Printer.open do |p|
         p.write("REPAIR REQUEST\n")
         p.write("#{Time.now.strftime('%Y-%m-%d %H:%M')}\n")
         p.write("From: #{sender}\n")
