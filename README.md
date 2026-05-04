@@ -13,8 +13,8 @@ print-event log.
 ## Requirements
 
 - Docker + Docker Compose (the canonical run target is on a Raspberry Pi
-  with a USB receipt printer attached; the host kernel's `usblp` driver
-  exposes it at `/dev/usb/lp0`).
+  with a USB receipt printer attached). The app talks to the printer
+  directly via libusb, so no host-side `usblp` configuration is required.
 - Ruby 3.4.7 (see `.ruby-version`) is only needed if you want to run things
   outside of Docker for editor tooling; the production stack runs entirely
   in the container.
@@ -47,7 +47,6 @@ The production pipeline (`docker compose up`) reads a few additional vars:
 | `IMAP_PROCESSED_MAILBOX` | Folder to move printed emails into (must already exist)  | `Repairs/Printed`           |
 | `IMAP_SKIPPED_MAILBOX`   | Folder to move filtered-out emails into (must exist)     | `Repairs/Skipped`           |
 | `POLL_INTERVAL_SECONDS`  | How often the scheduler polls IMAP                       | `180`                       |
-| `PRINTER_DEVICE`         | usblp device node                                        | `/dev/usb/lp0`              |
 | `BODY_MIN_CHARS`         | Reject emails with plaintext body shorter than this      | `5`                         |
 | `BODY_MAX_CHARS`         | Reject emails with plaintext body longer than this       | `1500`                      |
 | `DB_PATH`                | SQLite database file path inside the container           | `/app/data/repairs.sqlite3` |
@@ -93,15 +92,22 @@ docker compose run --rm app
 Sanity-check that the printer is visible from inside the container:
 
 ```bash
-docker compose run --rm app bash -lc "ls -l /dev/usb/lp0"
+docker compose run --rm app bash -lc "lsusb | grep -i printer"
 ```
 
-If the host kernel has the `usblp` driver bound to the printer (the default on
-Raspberry Pi OS), you can drive it by writing raw ESC/POS bytes to
-`/dev/usb/lp0`. From IRB inside the container:
+Drive the printer interactively from IRB. The `Printer` class talks to the
+USB device directly via libusb, claims the kernel `usblp` driver out of the
+way automatically, writes raw ESC/POS bytes to the bulk OUT endpoint, and
+reads `DLE EOT` real-time status from the bulk IN endpoint:
 
 ```ruby
-File.binwrite("/dev/usb/lp0", "\x1b@hello, printer!\n\n\n\x1dV\x00")
+require "printer"
+
+Printer.open do |p|
+  p.write("hello, printer!\n")
+end                       # auto-feeds 6 lines + cuts on clean exit
+
+Printer.status            # => Printer::Status(online=true, paper=:ok, ...)
 ```
 
 If `device_cgroup_rules` is rejected on your kernel/cgroup combo, replace the
@@ -132,8 +138,9 @@ docker compose logs -f app
 ```
 
 Visit `http://<pi-host>:4567` for the dashboard: emails printed today,
-last printed / last skipped details, recent events, and printer status.
-`/healthz` returns `ok`. `/events.json` returns the last 100 events.
+live printer status (online / paper / cover / error), last printed and
+last skipped details, and a recent-events table. `/healthz` returns
+`ok`. `/events.json` returns the last 100 events.
 
 ### Filter
 
@@ -141,10 +148,20 @@ A message is **printed** unless any of these match:
 
 - has a `List-Unsubscribe` header (bulk / list mail)
 - has an `Auto-Submitted` header other than `no`
+- has a `Feedback-ID` header (transactional / notification mail)
+- is from a `no-reply@` / `do-not-reply@` address
 - has no `text/plain` part (HTML-only marketing)
 - plaintext body is shorter than `BODY_MIN_CHARS` or longer than `BODY_MAX_CHARS`
 
 Skip reasons are recorded so you can tune the thresholds in `.env`.
+
+### Deferred state
+
+If the printer isn't ready when a poll fires (paper out, cover open,
+offline), the entire batch is **deferred**: a single `deferred` event is
+recorded with the queue depth, no messages are moved out of INBOX, and
+the run exits cleanly. The next poll will retry. Watch the printer card
+on the dashboard to see what's keeping the printer down.
 
 ### Debug shell
 

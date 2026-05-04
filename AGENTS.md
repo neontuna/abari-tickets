@@ -35,20 +35,23 @@ The app is one process, in one container:
 - **Sinatra** serves the dashboard.
 - **rufus-scheduler** runs in a thread inside the same Puma process and polls
   IMAP every `POLL_INTERVAL_SECONDS`.
-- Each poll: fetch all messages in `INBOX`, run them through `EmailFilter`,
-  print the ones that pass via the `Printer` class (raw bytes to
-  `/dev/usb/lp0` via the kernel `usblp` driver), record an event row in
-  SQLite, then `IMAP MOVE` the message into `Repairs/Printed` or
-  `Repairs/Skipped`. Inbox stays empty between polls.
+- Each poll: fetch all messages in `INBOX`, check printer status; if the
+  printer isn't ready, record one `deferred` event and bail (messages stay
+  in INBOX, retried next poll). Otherwise run each message through
+  `EmailFilter`, print the ones that pass via the `Printer` class (libusb
+  bulk transfers, ESC/POS), record an event row in SQLite, then
+  `IMAP MOVE` the message into `Repairs/Printed` or `Repairs/Skipped`.
+  Inbox stays empty between polls.
 
 Architecture (don't add pieces not on this picture without asking):
 
 ```
 rufus  ->  InboxProcessor  ->  IMAP (fetch/move)
                             ->  EmailFilter (decide)
-                            ->  Printer (/dev/usb/lp0)
+                            ->  Printer (libusb -> USB receipt printer)
                             ->  DB (SQLite print_events)
-Sinatra (:4567)             ->  DB
+Sinatra (:4567)             ->  Printer.status (live status card)
+                            ->  DB
 ```
 
 There is **no Rails, no Sidekiq, no Redis, no cron, no host-side daemon**.
@@ -125,8 +128,18 @@ server before the first poll fires. The processor will not auto-create them.
   printed vs skipped, that's the single place. Each rule should produce a
   human-readable skip reason — the dashboard surfaces them so the user can
   tune thresholds without spelunking through code.
-- **Printer is one-way.** We talk to `/dev/usb/lp0` (kernel `usblp` driver).
-  We do not have status read-back. Don't claim otherwise in UI text.
+- **Printer is bidirectional via libusb.** `lib/printer.rb` opens the USB
+  Printer Class device directly (VID/PID hardcoded), claims the printer
+  interface with `auto_detach_kernel_driver = true` so the kernel `usblp`
+  driver gets out of the way, and uses the bulk OUT endpoint for ESC/POS
+  bytes plus the bulk IN endpoint for `DLE EOT n` real-time status reads.
+  `Printer.status` returns a `Printer::Status` struct (`online`, `paper`,
+  `cover_open`, `error`, plus the raw bytes for debugging).
+- **Print jobs are gated on printer status.** At the top of each poll
+  cycle, after fetching the inbox UID list, `InboxProcessor` calls
+  `Printer.status` once and bails with a single `deferred` event if it's
+  not ready. Messages stay in INBOX and retry next poll. Per-message
+  status checks are deliberately not added (noisy and rarely useful).
 - **Errors in the poll loop must not kill the scheduler.** The `every` block
   in `app.rb` catches `StandardError` and `warn`s. Errors inside
   `process_one` (e.g. a single bad message) do propagate up and abort the
@@ -143,8 +156,10 @@ These have come up and been ruled out for now. Don't add them without asking:
 - Authentication on the dashboard (it's on a trusted LAN).
 - Photo / attachment printing (customers occasionally attach photos; ignored
   for now, only the plaintext body is printed).
-- Bidirectional printer status (paper-out, online). Would require dropping
-  `usblp` for raw `libusb`. Not worth the complexity yet.
+- Configurable printer VID/PID (one printer on one Pi; if it ever changes,
+  edit the constants in `lib/printer.rb`).
+- Long-lived shared printer USB handle. Open/close per print job and per
+  status read is fine at our cadence (~100 ms each).
 - Retries, dead-lettering, deduplication, rate limiting.
 - Pretty receipt formatting (bold/centered/barcodes/QR). The receipt is
   plain text and the printer hardware-wraps long lines. Add styling only

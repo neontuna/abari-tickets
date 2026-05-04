@@ -13,6 +13,11 @@ gem "openssl",  ">= 3.3.2"
 gem "net-imap", "~> 0.6"
 gem "mail",     "~> 2.8"
 
+# Talk to the USB receipt printer via libusb-1.0 (the libusb-1.0-0
+# runtime is installed in the Dockerfile). Lets us read printer status
+# (paper out, cover open, etc.) on top of writing ESC/POS bytes.
+gem "libusb",   "~> 0.7"
+
 # Web dashboard + in-process scheduler.
 gem "sinatra",         "~> 4.0"
 gem "rackup",          "~> 2.1"

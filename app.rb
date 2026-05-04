@@ -13,6 +13,7 @@ end
 
 require_relative "lib/db"
 require_relative "lib/inbox_processor"
+require_relative "lib/printer"
 
 class RepairsApp < Sinatra::Base
   set :bind, "0.0.0.0"
@@ -55,8 +56,14 @@ class RepairsApp < Sinatra::Base
     @recent       = DB.connection.execute(
       "SELECT * FROM print_events ORDER BY id DESC LIMIT 25"
     )
-    @printer_device = ENV.fetch("PRINTER_DEVICE", "/dev/usb/lp0")
-    @printer_ok     = File.writable?(@printer_device)
+    @printer_status = begin
+      Printer.status
+    rescue StandardError => e
+      Printer::Status.new(
+        online: false, paper: :unknown, cover_open: false, error: true,
+        raw: { error: "#{e.class}: #{e.message}" }
+      )
+    end
     @booted_at      = settings.booted_at
     @poll_interval  = Integer(ENV.fetch("POLL_INTERVAL_SECONDS", "180"))
     erb :dashboard
