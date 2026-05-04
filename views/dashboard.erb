@@ -28,7 +28,7 @@
 </head>
 <body>
   <h1>abari-repairs</h1>
-  <p class="sub">Polling every <%= @poll_interval %>s &middot; up since <%= @booted_at.strftime("%Y-%m-%d %H:%M:%S") %></p>
+  <p class="sub">Polling every <%= @poll_interval %>s &middot; up since <%= @booted_at.strftime("%Y-%m-%d %-I:%M:%S %p") %></p>
 
   <div class="grid">
     <div class="card">
@@ -54,7 +54,7 @@
       <% if @last_printed %>
         <div><strong><%= @last_printed["subject"] || "(no subject)" %></strong></div>
         <div><%= @last_printed["sender"] %></div>
-        <div class="sub"><%= @last_printed["occurred_at"] %></div>
+        <div class="sub"><%= fmt_time(@last_printed["occurred_at"]) %></div>
         <% if @last_printed["body_excerpt"] && !@last_printed["body_excerpt"].empty? %>
           <div class="body">"<%= @last_printed["body_excerpt"] %>"</div>
         <% end %>
@@ -67,7 +67,7 @@
       <% if @last_skipped %>
         <div><strong><%= @last_skipped["subject"] || "(no subject)" %></strong></div>
         <div><%= @last_skipped["sender"] %></div>
-        <div class="sub"><%= @last_skipped["occurred_at"] %></div>
+        <div class="sub"><%= fmt_time(@last_skipped["occurred_at"]) %></div>
         <div class="reason"><%= @last_skipped["reason"] %></div>
       <% else %>
         <div class="sub">none yet</div>
@@ -86,7 +86,7 @@
       <tbody>
         <% @recent.each do |row| %>
           <tr class="<%= row["action"] == "deferred" ? "deferred-row" : "" %>">
-            <td><%= row["occurred_at"] %></td>
+            <td><%= fmt_time(row["occurred_at"]) %></td>
             <td><span class="action-<%= row["action"] %>"><%= row["action"] %></span></td>
             <td><%= row["sender"] %></td>
             <td><%= row["subject"] %></td>

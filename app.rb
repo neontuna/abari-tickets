@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require "time"
 require "sinatra/base"
 require "rufus-scheduler"
 
@@ -36,6 +37,16 @@ class RepairsApp < Sinatra::Base
     set :scheduler, scheduler
   end
 
+  helpers do
+    # Parse a UTC ISO8601 timestamp from the DB and reformat in the
+    # local timezone (controlled by the TZ env var) as "YYYY-MM-DD H:MM AM".
+    def fmt_time(iso_utc)
+      return "" if iso_utc.nil? || iso_utc.to_s.empty?
+
+      Time.parse(iso_utc.to_s).getlocal.strftime("%Y-%m-%d %-I:%M %p")
+    end
+  end
+
   get "/healthz" do
     "ok"
   end
@@ -43,7 +54,8 @@ class RepairsApp < Sinatra::Base
   get "/" do
     @today_count  = DB.connection.execute(
       "SELECT COUNT(*) AS n FROM print_events
-        WHERE action = 'printed' AND date(occurred_at) = date('now')"
+        WHERE action = 'printed'
+          AND date(occurred_at, 'localtime') = date('now', 'localtime')"
     ).first["n"]
     @last_printed = DB.connection.execute(
       "SELECT * FROM print_events WHERE action='printed'

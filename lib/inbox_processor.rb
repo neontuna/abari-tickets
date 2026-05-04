@@ -63,7 +63,7 @@ module InboxProcessor
       body = EmailFilter.plain_body(mail)
       Printer.open do |p|
         p.write("REPAIR REQUEST\n")
-        p.write("#{Time.now.strftime('%Y-%m-%d %H:%M')}\n")
+        p.write("#{Time.now.strftime('%Y-%m-%d %-I:%M %p')}\n")
         p.write("From: #{sender}\n")
         p.write("Subject: #{subject}\n\n")
         p.write("#{body}\n")
