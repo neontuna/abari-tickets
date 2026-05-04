@@ -5,7 +5,7 @@
   <meta http-equiv="refresh" content="60">
   <title>abari-repairs</title>
   <style>
-    body { font: 14px/1.4 system-ui, sans-serif; max-width: 900px; margin: 2em auto; padding: 0 1em; color: #222; }
+    body { font: 14px/1.4 system-ui, sans-serif; max-width: 1200px; margin: 2em auto; padding: 0 1em; color: #222; }
     h1 { margin-bottom: 0; }
     .sub { color: #666; margin-top: 0.25em; }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1em; margin: 1.5em 0; }
@@ -16,6 +16,7 @@
     .bad { color: #b22; }
     table { border-collapse: collapse; width: 100%; margin-top: 0.5em; }
     th, td { text-align: left; padding: 0.4em 0.6em; border-bottom: 1px solid #eee; vertical-align: top; }
+    td.when { white-space: nowrap; }
     th { background: #fafafa; font-weight: 600; }
     .reason { color: #b22; }
     .body { color: #555; font-style: italic; }
@@ -43,7 +44,6 @@
       <div class="sub">
         paper: <%= @printer_status.paper %>
         &middot; cover: <%= @printer_status.cover_open ? "open" : "closed" %>
-        &middot; <%= @printer_status.online ? "online" : "offline" %>
       </div>
     </div>
   </div>
@@ -86,7 +86,7 @@
       <tbody>
         <% @recent.each do |row| %>
           <tr class="<%= row["action"] == "deferred" ? "deferred-row" : "" %>">
-            <td><%= fmt_time(row["occurred_at"]) %></td>
+            <td class="when"><%= fmt_time(row["occurred_at"]) %></td>
             <td><span class="action-<%= row["action"] %>"><%= row["action"] %></span></td>
             <td><%= row["sender"] %></td>
             <td><%= row["subject"] %></td>
