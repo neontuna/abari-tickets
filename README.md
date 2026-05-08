@@ -50,6 +50,7 @@ The production pipeline (`docker compose up`) reads a few additional vars:
 | `BODY_MIN_CHARS`         | Reject emails with plaintext body shorter than this      | `5`                         |
 | `BODY_MAX_CHARS`         | Reject emails with plaintext body longer than this       | `1500`                      |
 | `DB_PATH`                | SQLite database file path inside the container           | `/app/data/repairs.sqlite3` |
+| `TZ`                     | Timezone for printed receipts and the dashboard          | `America/New_York`          |
 
 
 ### Gmail note
@@ -139,14 +140,15 @@ docker compose logs -f app
 
 Visit `http://<pi-host>:4567` for the dashboard: emails printed today,
 live printer status (online / paper / cover / error), last printed and
-last skipped details, and a recent-events table. `/healthz` returns
-`ok`. `/events.json` returns the last 100 events.
+last skipped details, and a recent-events table. Times are rendered in
+the timezone set by `TZ` (default `America/New_York`, 12-hour format).
+`/healthz` returns `ok` and is wired up as the container's Docker
+healthcheck. `/events.json` returns the last 100 events.
 
 ### Filter
 
 A message is **printed** unless any of these match:
 
-- has a `List-Unsubscribe` header (bulk / list mail)
 - has an `Auto-Submitted` header other than `no`
 - has a `Feedback-ID` header (transactional / notification mail)
 - is from a `no-reply@` / `do-not-reply@` address
@@ -154,6 +156,11 @@ A message is **printed** unless any of these match:
 - plaintext body is shorter than `BODY_MIN_CHARS` or longer than `BODY_MAX_CHARS`
 
 Skip reasons are recorded so you can tune the thresholds in `.env`.
+
+Common typographic Unicode in the body (curly quotes, en/em dashes,
+ellipsis, bullets, non-breaking spaces) is rewritten to ASCII before
+printing, since the printer's ESC/POS code page can't render those
+glyphs.
 
 ### Deferred state
 
