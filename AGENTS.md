@@ -35,13 +35,14 @@ The app is one process, in one container:
 - **Sinatra** serves the dashboard.
 - **rufus-scheduler** runs in a thread inside the same Puma process and polls
   IMAP every `POLL_INTERVAL_SECONDS`.
-- Each poll: fetch all messages in `INBOX`, check printer status; if the
-  printer isn't ready, record one `deferred` event and bail (messages stay
-  in INBOX, retried next poll). Otherwise run each message through
+- Each poll: fetch all messages in the source mailbox (`IMAP_MAILBOX`,
+  defaults to `Repairs`), check printer status; if the printer isn't
+  ready, record one `deferred` event and bail (messages stay in the source
+  mailbox, retried next poll). Otherwise run each message through
   `EmailFilter`, print the ones that pass via the `Printer` class (libusb
   bulk transfers, ESC/POS), record an event row in SQLite, then
   `IMAP MOVE` the message into `Repairs/Printed` or `Repairs/Skipped`.
-  Inbox stays empty between polls.
+  The source mailbox stays empty between polls.
 
 Architecture (don't add pieces not on this picture without asking):
 
@@ -138,12 +139,12 @@ server before the first poll fires. The processor will not auto-create them.
 - **Print jobs are gated on printer status.** At the top of each poll
   cycle, after fetching the inbox UID list, `InboxProcessor` calls
   `Printer.status` once and bails with a single `deferred` event if it's
-  not ready. Messages stay in INBOX and retry next poll. Per-message
+  not ready. Messages stay in the source mailbox and retry next poll. Per-message
   status checks are deliberately not added (noisy and rarely useful).
 - **Errors in the poll loop must not kill the scheduler.** The `every` block
   in `app.rb` catches `StandardError` and `warn`s. Errors inside
   `process_one` (e.g. a single bad message) do propagate up and abort the
-  current poll — that's intentional; the message stays in INBOX and gets
+  current poll — that's intentional; the message stays in the source mailbox and gets
   retried on the next poll.
 - **Keep `README.md` accurate** when you change behavior, env vars, or
   required IMAP folders.

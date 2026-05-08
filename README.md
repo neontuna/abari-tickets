@@ -37,7 +37,7 @@ docker compose build
 | `IMAP_PASSWORD` | Password or app password                    | (required) |
 | `IMAP_PORT`     | IMAP port                                   | `993`      |
 | `IMAP_SSL`      | Use TLS (1 is yes, anything else is no)     | `1`        |
-| `IMAP_MAILBOX`  | Mailbox to read                             | `INBOX`    |
+| `IMAP_MAILBOX`  | Mailbox to read                             | `Repairs`  |
 | `INBOX_LIMIT`   | How many recent messages to print           | `10`       |
 
 The production pipeline (`docker compose up`) reads a few additional vars:
@@ -159,7 +159,8 @@ Skip reasons are recorded so you can tune the thresholds in `.env`.
 
 If the printer isn't ready when a poll fires (paper out, cover open,
 offline), the entire batch is **deferred**: a single `deferred` event is
-recorded with the queue depth, no messages are moved out of INBOX, and
+recorded with the queue depth, no messages are moved out of the source
+mailbox, and
 the run exits cleanly. The next poll will retry. Watch the printer card
 on the dashboard to see what's keeping the printer down.
 

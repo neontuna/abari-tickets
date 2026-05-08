@@ -7,7 +7,7 @@ require "mail"
 # body-length checks last.
 module EmailFilter
   def self.decide(mail)
-    return [:skip, "list mail (List-Unsubscribe)"] if mail.header["List-Unsubscribe"]
+    # return [:skip, "list mail (List-Unsubscribe)"] if mail.header["List-Unsubscribe"]
 
     auto = mail.header["Auto-Submitted"]&.to_s
     return [:skip, "auto-submitted: #{auto}"] if auto && auto != "no"

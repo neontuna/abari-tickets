@@ -6,9 +6,10 @@ require_relative "printer"
 require_relative "email_filter"
 require_relative "db"
 
-# Pulls all messages from the configured INBOX, decides print vs skip for
-# each, prints the printable ones, then MOVEs each message to either the
-# "processed" or "skipped" mailbox so the inbox stays empty between polls.
+# Pulls all messages from the configured source mailbox (IMAP_MAILBOX),
+# decides print vs skip for each, prints the printable ones, then MOVEs each
+# message to either the "processed" or "skipped" mailbox so the source
+# mailbox stays empty between polls.
 module InboxProcessor
   def self.run
     host    = ENV.fetch("IMAP_HOST")
@@ -16,7 +17,7 @@ module InboxProcessor
     ssl     = ENV["IMAP_SSL"]&.to_i == 1
     user    = ENV.fetch("IMAP_USERNAME")
     pass    = ENV.fetch("IMAP_PASSWORD")
-    inbox   = ENV.fetch("IMAP_MAILBOX", "INBOX")
+    inbox   = ENV.fetch("IMAP_MAILBOX", "Repairs")
     printed = ENV.fetch("IMAP_PROCESSED_MAILBOX")
     skipped = ENV.fetch("IMAP_SKIPPED_MAILBOX")
 
@@ -64,9 +65,9 @@ module InboxProcessor
       Printer.open do |p|
         p.write("REPAIR REQUEST\n")
         p.write("#{Time.now.strftime('%Y-%m-%d %-I:%M %p')}\n")
-        p.write("From: #{sender}\n")
-        p.write("Subject: #{subject}\n\n")
-        p.write("#{body}\n")
+        p.write("From: #{printable(sender)}\n")
+        p.write("Subject: #{printable(subject)}\n\n")
+        p.write("#{printable(body)}\n")
       end
       DB.record(action: "printed", sender: sender, subject: subject,
                 body_excerpt: excerpt(mail), message_id: msg_id, imap_uid: uid)
@@ -81,5 +82,23 @@ module InboxProcessor
   def self.excerpt(mail)
     body = EmailFilter.plain_body(mail) || ""
     body[0, 200]
+  end
+
+  # Mail clients autocorrect ASCII punctuation into typographic Unicode
+  # (curly quotes, em-dashes, ellipsis, nbsp). The printer's ESC/POS code
+  # page can't render those, so we map them back to ASCII before printing.
+  TYPOGRAPHIC_TO_ASCII = {
+    "\u2018" => "'",  "\u2019" => "'",  "\u201A" => "'",  "\u201B" => "'",
+    "\u201C" => '"',  "\u201D" => '"',  "\u201E" => '"',  "\u201F" => '"',
+    "\u2013" => "-",  "\u2014" => "--", "\u2212" => "-",
+    "\u2026" => "...",
+    "\u2022" => "*",  "\u00B7" => "*",
+    "\u00A0" => " "
+  }.freeze
+
+  def self.printable(str)
+    return str if str.nil?
+
+    str.to_s.gsub(Regexp.union(TYPOGRAPHIC_TO_ASCII.keys), TYPOGRAPHIC_TO_ASCII)
   end
 end
